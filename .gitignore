@@ -1,7 +1,7 @@
 *.json
-data/
 image/
 *.npy
 *.pyc
 *.jpg
 *.jpeg
+*.pkl
