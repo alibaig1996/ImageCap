@@ -1,16 +1,16 @@
 import pickle
 import os
 import sys
-sys.path.append('../coco-caption')
-from pycocoevalcap.bleu.bleu import Bleu
-from pycocoevalcap.rouge.rouge import Rouge
-from pycocoevalcap.cider.cider import Cider
-from pycocoevalcap.meteor.meteor import Meteor
+sys.path.append('D:\\ImageCap\\core')
+from cococaption.pycocoevalcap.bleu.bleu import Bleu
+from cococaption.pycocoevalcap.rouge.rouge import Rouge
+from cococaption.pycocoevalcap.cider.cider import Cider
+from cococaption.pycocoevalcap.meteor.meteor import Meteor
 
 def score(ref, hypo):
     scorers = [
         (Bleu(4),["Bleu_1","Bleu_2","Bleu_3","Bleu_4"]),
-        (Meteor(),"METEOR"),
+        # (Meteor(),"METEOR"),
         (Rouge(),"ROUGE_L"),
         (Cider(),"CIDEr")
     ]
@@ -49,23 +49,9 @@ def evaluate(data_path='./data', split='val', get_scores=False):
     print('Bleu_2:\t',final_scores['Bleu_2']  )
     print('Bleu_3:\t',final_scores['Bleu_3']  )
     print('Bleu_4:\t',final_scores['Bleu_4']  )
-    print('METEOR:\t',final_scores['METEOR']  )
+    # print('METEOR:\t',final_scores['METEOR']  )
     print('ROUGE_L:',final_scores['ROUGE_L']  )
     print('CIDEr:\t',final_scores['CIDEr'])
     
     if get_scores:
         return final_scores
-    
-   
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-

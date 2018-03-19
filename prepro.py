@@ -136,6 +136,45 @@ def buildCaptionVector(annotations, word_to_idx, max_length=15):
     print("Finished building caption vectors")
     return captions
 
+# def oneHotEncode(word, word_to_idx):
+# 	vec = np.zeros(len(word_to_idx))
+
+# 	index = word_to_idx[word]
+
+# 	vec[index] = 1
+
+# 	return vec
+
+# def buildCaptionVector(annotations, word_to_idx, max_length=15):
+#     n_examples = len(annotations)
+#     # n_examples = 1000    
+#     captions = np.ndarray((n_examples, max_length+2, len(word_to_idx))).astype(np.int32) 
+#     print(captions.nbytes)
+#     quit()
+#     for i, caption in enumerate(annotations['caption']):
+#         # if (i == 1000):
+#         #     break
+#         words = caption.split(" ") # caption contrains only lower-case words
+#         cap_vec = []
+#         cap_vec.append(oneHotEncode('<START>', word_to_idx))
+#         for word in words:
+#             if word in word_to_idx:
+#                 cap_vec.append(oneHotEncode(word, word_to_idx))
+#         cap_vec.append(oneHotEncode('<END>', word_to_idx))
+        
+#         # pad short caption with the special null token '<NULL>' to make it fixed-size vector
+#         if len(cap_vec) < (max_length + 2):
+#             for j in range(max_length + 2 - len(cap_vec)):
+#                 cap_vec.append(oneHotEncode('<NULL>', word_to_idx))
+
+#         print(word, ": ", cap_vec) 
+
+#         captions[i, :] = np.asarray(cap_vec)
+
+#     # print(captions)
+#     print("Finished building caption vectors")
+    # return captions
+
 def buildFileNames(annotations, split):
     image_file_names = []
     id_to_idx = {}
@@ -230,8 +269,8 @@ def main():
     image_dir = 'image/%2014_resized/'
 
     # about 80000 images and 400000 captions for train dataset
-    train_dataset = processCaptionData(caption_file='data/annotations/captions_train2014.json',
-                                          image_dir='image/train2014_resized/',
+    train_dataset = processCaptionData(caption_file='data/annotations/captions_train2017.json',
+                                          image_dir='image/train2017/',
                                           max_length=max_length)
 
     # about 40000 images and 200000 captions
@@ -244,23 +283,23 @@ def main():
     test_cutoff = int(0.2 * len(val_dataset))
     print('Finished processing caption data')
 
-    save_pickle(train_dataset, 'data/train/train.annotations.pkl')
+    save_pickle(train_dataset, 'data/train/train.annotations2.pkl')
     save_pickle(val_dataset[:val_cutoff], 'data/val/val.annotations.pkl')
     save_pickle(val_dataset[val_cutoff:test_cutoff].reset_index(drop=True), 'data/test/test.annotations.pkl')
 
     for split in ['train', 'val', 'test']:
-        annotations = load_pickle('./data/%s/%s.annotations.pkl' % (split, split))
+        annotations = load_pickle('./data/%s/%s.annotations2.pkl' % (split, split))
 
         if split == 'train':
             word_to_idx = buildVocab(annotations=annotations, threshold=word_count_threshold)
-            save_pickle(word_to_idx, './data/%s/word_to_idx.pkl' % split)
+            save_pickle(word_to_idx, './data/%s/word_to_idx2.pkl' % split)
         
-        captions = buildCaptionVector(annotations=annotations, word_to_idx=word_to_idx, max_length=max_length)
-        save_pickle(captions, './data/%s/%s.captions.pkl' % (split, split))
+        # captions = buildCaptionVector(annotations=annotations, word_to_idx=word_to_idx, max_length=max_length)
+        # save_pickle(captions, './data/%s/%s.captions.pkl' % (split, split))
 
         file_names, id_to_idx = buildFileNames(annotations, split)
-        save_pickle(file_names, './data/%s/%s.file.names.pkl' % (split, split))
-
+        save_pickle(file_names, './data/%s/%s.file.names2.pkl' % (split, split))
+        quit()
         image_idxs = buildImageIdx(annotations, id_to_idx, split)
         save_pickle(image_idxs, './data/%s/%s.image.idxs.pkl' % (split, split))
 

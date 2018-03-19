@@ -1,119 +1,174 @@
-from scipy import ndimage
-from collections import Counter
+# from core.solver import CaptioningSolver
+# from core.model import CaptionGenerator
+from core.utils import *
+from core.bleu import *
+from model import ImageCapModel
 
 import tensorflow as tf
+import matplotlib.pyplot as plt
+import skimage.transform
 import numpy as np
-import pandas as pd
-import hickle
-import os
-import json
+import time
+import os 
+import pickle
+from scipy import ndimage
 
-from gensim.models import KeyedVectors
+class Trainer(object):
+	def __init__(self, model, trainData, valData, batchSize = 100, nEpochs = 20, learningRate = 0.001, 
+					logPath = 'log/', modelPath = 'model/lstm', printScore = True, printCaptions = 50, saveEpochs = 4):
 
-class ImageCapModel(object):
-	def __init__(self, wordIndexes, dimFeature=4096, dimEmbed=300, dimHidden=300, nTimeStep=16, nEpochs=10, batchSize=100, learningRate=0.01):
+		self.model = model
+		self.trainData = trainData
+		self.valData = valData
 
-		# Model parameters
-		self.wordIndexes = wordIndexes
-		self.D = dimFeature
-		self.vocabSize = len(wordIndexes)
-		self.dimEmbed = dimEmbed
-		self.dimHidden = dimHidden
-		self.nTimeStep = nTimeStep
-		self._start = word_to_idx['<START>']
-		self._null = word_to_idx['<NULL>']
+		self.batchSize = batchSize
+		self.nEpochs = nEpochs
+		self.learningRate = learningRate
+		self.logPath = logPath
+		self.modelPath = modelPath
+		self.printScore = printScore
+		self.printCaptions = printCaptions
+		self.saveEpochs = saveEpochs
 
-		self.weightInitializer = tf.contrib.layers.xavier_initializer()
-		self.constInitializer = tf.constant_initializer(0.0)
+		self.optimizer = tf.train.AdamOptimizer
 
-		self.features = tf.placeholder(tf.float32, [None, self.L, self.D])
-		self.captions = tf.placeholder(tf.int32, [None, self.nTimeStep + 1])
+		if not os.path.exists(self.model_path):
+			os.makedirs(self.model_path)
+		if not os.path.exists(self.log_path):
+			os.makedirs(self.log_path)
+
+		def train():
+			nSamples = self.data['captions'].shape[0]
+			# nSamples = self.data['features'].shape[0]
+
+			nItersPerEpoch = int(np.ceil(float(nSamples)/self.batchSize))
+
+			features = self.data['features']
+
+			print(features.shape)
+			print("")
+
+			captions = self.data['captions']
+
+			print(captions.shape)
+			print("")
+
+			imageIdxs = self.data['imageIdxs']
+
+			print(imageIdxs.shape)
+			print((imageIdxs))
+			print(type(imageIdxs[0]))
+			print("")
+
+			valFeatures = self.val_data['features']
+			nItersVal = int(np.ceil(float(valFeatures.shape[0])/self.batchSize))
+
+			with tf.variable_scope(tf.get_variable_scope()):
+				loss = self.model.build()
+				# quit()
+				# loss = self.model.build()
+				tf.get_variable_scope().reuse_variables()
+				_, _, generated_captions = self.model.build_sampler(max_len=20)
+
+			with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+				optimizer = self.optimizer(learning_rate=self.learningRate)
+				gradientss = tf.gradients(loss, tf.trainable_variables())
+				gradsAndVars = list(zip(grads, tf.trainable_variables()))
+				trainOp = optimizer.apply_gradients(grads_and_vars=gradsAndVars)
+
+			tf.summary.scalar('batch_loss', loss)
+			for var in tf.trainable_variables():
+				tf.summary.histogram(var.op.name, var)
+			for grad, var in gradsAndVars:
+				tf.summary.histogram(var.op.name+'/gradient', grad)
+
+			summaryOp = tf.summary.merge_all() 
+
+			print("The number of epoch: %d" %self.nEpochs)
+			print("Data size: %d" %nSamples)
+			print("Batch size: %d" %self.batchSize)
+			print("Iterations per epoch: %d" %nItersPerEpoch)
+
+			config = tf.ConfigProto(allow_soft_placement = True)
+
+			with tf.Session(config=config) as sess:
+				tf.global_variables_initializer().run()
+				summary_writer = tf.summary.FileWriter(self.log_path, graph=tf.get_default_graph())
+				saver = tf.train.Saver(max_to_keep=40)
+
+				prevLoss = -1
+				currLoss = 0
+				start_t = time.time()
+
+				for e in range(self.nEpochs):
+					shuffledIndexes = np.random.permutation(nSamples)
+
+					captions = captions[shuffledIndexes]
+					imageIdxs = imageIdxs[shuffledIndexes]
+
+					for i in range(nItersPerEpoch):
+						captionsBatch = captions[i*self.batchSize:(i+1)*self.batchSize]
+
+						imageIdxsBatch = imageIdxs[i*self.batchSize:(i+1)*self.batchSize]
+
+						featuresBatch = features[imageIdxsBatch]
+
+						feed_dict = {self.model.features: featuresBatch, self.model.captions: captionsBatch}
+						_ ,l = sess.run([train_op, loss], feed_dict)
+						currLoss += l
+
+						if i % 10 == 0:
+							summary = sess.run(summaryOp, feed_dict)
+							summary_writer.add_summary(summary, e*nItersPerEpoch + i)
+
+						if (i+1) % self.print_every == 0:
+							print("\nTrain loss at epoch %d & iteration %d (mini-batch): %.5f" %(e+1, i+1, l))
+							print("Elapsed time: ", time.time() - start_t)
+							groundTruths = captions[imageIdxs == imageIdxsBatch[0]]
+							decoded = decode_captions(groundTruths, self.model.idx_to_word)
+							for j, gt in enumerate(decoded):
+								print("Ground truth %d: %s" %(j+1, gt)                    )
+							genCaps = sess.run(generated_captions, feed_dict)
+							decoded = decode_captions(genCaps, self.model.idx_to_word)
+							print("Generated caption: %s\n" %decoded[0])
+
+					print("Previous epoch loss: ", prevLoss)
+					print("Current epoch loss: ", currLoss)
+					print("Elapsed time: ", time.time() - start_t)
+					prevLoss = currLoss
+					currLoss = 0
+
+					if self.print_bleu:
+						allGeneratedCaptions = np.ndarray((valFeatures.shape[0], 20))
+						for i in range(n_iters_val):
+							featuresBatch = valFeatures[i*self.batchSize:(i+1)*self.batchSize]
+							feed_dict = {self.model.features: featuresBatch}
+							generatedCaptions = sess.run(generated_captions, feed_dict=feed_dict)  
+							allGeneratedCaptions[i*self.batchSize:(i+1)*self.batchSize] = generatedCaptions
+
+						allDecoded = decode_captions(allGeneratedCaptions, self.model.idx_to_word)
+						save_pickle(allDecoded, "./data/val/val.candidate.captions.pkl")
+						# scores = evaluate(data_path='./data', split='val', get_scores=True)
+						# write_bleu(scores=scores, path=self.model_path, epoch=e)
+
+					# save model's parameters
+					if (e+1) % self.save_every == 0:
+						saver.save(sess, os.path.join(self.modelPath, 'model'), global_step=e+1)
+						print("model-%s saved." %(e+1))
 
 
-	# Maps Feature Map into embedding space
-	def buildImageEmbeddings(self, features):
-		with tf.variable_scope('imageEmbedding') as embeddingScope:
-			imageEmbeddings = tf.contrib.layers.fully_connected(
-									inputs=features,
-									num_outputs=self.dimHidden,
-									activation_fn=None,
-									weights_initializer=self.weightInitializer,
-									biases_initializer=self.constInitializer,
-									scope=embeddingScope)
+def main():
+	trainData = load_coco_data(data_path='./data', split='train')
+	valData = load_coco_data(data_path='./data', split='val')
 
-			return imageEmbeddings
+	wordIndex = trainData['word_to_idx']
 
-	# Maps Captions into embedding space
-	def buildCaptionEmbeddings(self, inputs):
-		with tf.variable_scope('captionEmbedding'):
-			captionEmbedding = tf.get_variable('captionEmbedding', [self.vocabSize, self.dimEmbed], initializer=self.emb_initializer)
-			vec = tf.nn.embedding_lookup(captionEmbedding, inputs, name='word_vector')  # (N, T, M) or (N, M)
-			return vec
+	model = ImageCapModel(wordIndex, dimFeature=4096, dimEmbed=300, dimHidden=300, nTimeStep=16)
 
-	def buildInitialStates(self, inputs):
-		with tf.variable_scope("initialStates"):
-			hiddenWeights = tf.get_variable('hiddenWeights', [self.D, self.H], initializer=self.weightInitializer)
-			hiddenBiases = tf.get_variable('hiddenBiases', [self.H], initializer=self.constInitializer)
-			hiddenState = tf.nn.tanh(tf.matmul(inputs, hiddenWeights) + hiddenBiases)
+	trainer = Trainer(model, trainData, valData, batchSize = 100, nEpochs = 20, learningRate = 0.001, 
+					logPath = 'log/', modelPath = 'model/lstm', printScore = True, printCaptions = 50, saveEpochs = 4)
 
-			cellWeights = tf.get_variable('cellWeights', [self.D, self.H], initializer=self.weightInitializer)
-			cellBiases = tf.get_variable('cellBiases', [self.H], initializer=self.constInitializer)
-			cellState = tf.nn.tanh(tf.matmul(inputs, cellWeights) + cellBiases)
+	trainer.train()
 
-			return cellState, hiddenState
-
-	def buildLogits(self, hiddenState):
-		with tf.variable_scope('logits'):
-			hiddenWeights = tf.get_variable('hiddenWeights', [self.H, self.M], initializer = self.weightInitializer)
-			hiddenBiases = tf.get_variable('hiddenBiases', [self.M], initializer=self.constInitializer)
-
-			outWeights = tf.get_variable('outWeights', [self.M, self.M], initializer = self.weightInitializer)
-			outBiases = tf.get_variable('outBiases', [self.V], initializer=self.constInitializer)
-
-			hiddenLogits = tf.nn.tanh(tf.matmul(tf.nn.dropout(hiddenState, 0.5), hiddenWeights) + hiddenBiases)
-
-			outLogits = tf.nn.tanh(tf.matmul(tf.nn.dropout(hiddenLogits, 0.5), outWeights) + outBiases)
-
-			return outLogits
-
-
-	def build():
-
-		features = self.features
-		captions = self.captions
-
-		batchSize = self.batchSize
-
-		inputSequence = captions[:, :self.nTimeStep]      
-		outputSequence = captions[:, 1:]  
-		outputMask = tf.to_float(tf.not_equal(outputSequence, 0))
-
-		normalizedFeatures = tf.contrib.layers.batch_norm(inputs=features, 
-													decay=0.95,
-													center=True,
-													scale=True,
-													is_training=True,
-													updates_collections=None,
-													scope="normalizedFeatures")
-		
-		embeddedFeatures = self.buildImageEmbeddings(features=normalizedFeatures)
-
-		# cellState, hiddenState =  self.buildInitialStates(inputs=embeddedFeatures)
-
-		embeddedCaptions = self.buildCaptionEmbeddings(inputs = inputSequence)
-
-		loss = 0.0
-
-		lstmCell = tf.nn.rnn_cell.BasicLSTMCell(num_units = self.H)
-
-		zero_state = lstm_cell.zero_state(batch_size=tf.shape(features)[0], dtype=tf.float32)
-
-		for t in range(self.nTimeStep):
-			with tf.variable_scope('LSTM', reuse=(t!=0)):
-				_, (cellState, hiddenState) = lstmCell(inputs=embeddedCaptions[:,t,:], state = [cellState, hiddenState])
-
-			logits = buildLogits(hiddenState)
-
-			loss += tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=outputSequence[:, t]) * outputMask[:, t])
-
-		return (loss / tf.to_float(batchSize))
+if __name__ == '__main__':
+	main()
