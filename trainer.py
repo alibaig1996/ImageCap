@@ -32,129 +32,130 @@ class Trainer(object):
 
 		self.optimizer = tf.train.AdamOptimizer
 
-		if not os.path.exists(self.model_path):
-			os.makedirs(self.model_path)
-		if not os.path.exists(self.log_path):
-			os.makedirs(self.log_path)
+		if not os.path.exists(self.modelPath):
+			os.makedirs(self.modelPath)
+		if not os.path.exists(self.logPath):
+			os.makedirs(self.logPath)
 
-		def train():
-			nSamples = self.data['captions'].shape[0]
-			# nSamples = self.data['features'].shape[0]
+	def train(self):
 
-			nItersPerEpoch = int(np.ceil(float(nSamples)/self.batchSize))
+		nSamples = self.trainData['captions'].shape[0]
+		# nSamples = self.trainData['features'].shape[0]
 
-			features = self.data['features']
+		nItersPerEpoch = int(np.ceil(float(nSamples)/self.batchSize))
 
-			print(features.shape)
-			print("")
+		features = self.trainData['features']
 
-			captions = self.data['captions']
+		print(features.shape)
+		print("")
 
-			print(captions.shape)
-			print("")
+		captions = self.trainData['captions']
 
-			imageIdxs = self.data['imageIdxs']
+		print(captions.shape)
+		print("")
 
-			print(imageIdxs.shape)
-			print((imageIdxs))
-			print(type(imageIdxs[0]))
-			print("")
+		imageIdxs = self.trainData['image_idxs']
 
-			valFeatures = self.val_data['features']
-			nItersVal = int(np.ceil(float(valFeatures.shape[0])/self.batchSize))
+		print(imageIdxs.shape)
+		print((imageIdxs))
+		print(type(imageIdxs[0]))
+		print("")
 
-			with tf.variable_scope(tf.get_variable_scope()):
-				loss = self.model.build()
-				# quit()
-				# loss = self.model.build()
-				tf.get_variable_scope().reuse_variables()
-				_, _, generated_captions = self.model.build_sampler(max_len=20)
+		valFeatures = self.valData['features']
+		nItersVal = int(np.ceil(float(valFeatures.shape[0])/self.batchSize))
 
-			with tf.variable_scope(tf.get_variable_scope(), reuse=False):
-				optimizer = self.optimizer(learning_rate=self.learningRate)
-				gradientss = tf.gradients(loss, tf.trainable_variables())
-				gradsAndVars = list(zip(grads, tf.trainable_variables()))
-				trainOp = optimizer.apply_gradients(grads_and_vars=gradsAndVars)
+		with tf.variable_scope(tf.get_variable_scope()):
+			loss = self.model.build()
+			# quit()
+			# loss = self.model.build()
+			tf.get_variable_scope().reuse_variables()
+			_, _, generated_captions = self.model.build_sampler(max_len=20)
 
-			tf.summary.scalar('batch_loss', loss)
-			for var in tf.trainable_variables():
-				tf.summary.histogram(var.op.name, var)
-			for grad, var in gradsAndVars:
-				tf.summary.histogram(var.op.name+'/gradient', grad)
+		with tf.variable_scope(tf.get_variable_scope(), reuse=False):
+			optimizer = self.optimizer(learning_rate=self.learningRate)
+			gradients = tf.gradients(loss, tf.trainable_variables())
+			gradsAndVars = list(zip(gradients, tf.trainable_variables()))
+			trainOp = optimizer.apply_gradients(grads_and_vars=gradsAndVars)
 
-			summaryOp = tf.summary.merge_all() 
+		tf.summary.scalar('batch_loss', loss)
+		for var in tf.trainable_variables():
+			tf.summary.histogram(var.op.name, var)
+		for grad, var in gradsAndVars:
+			tf.summary.histogram(var.op.name+'/gradient', grad)
 
-			print("The number of epoch: %d" %self.nEpochs)
-			print("Data size: %d" %nSamples)
-			print("Batch size: %d" %self.batchSize)
-			print("Iterations per epoch: %d" %nItersPerEpoch)
+		summaryOp = tf.summary.merge_all() 
 
-			config = tf.ConfigProto(allow_soft_placement = True)
+		print("The number of epoch: %d" %self.nEpochs)
+		print("Data size: %d" %nSamples)
+		print("Batch size: %d" %self.batchSize)
+		print("Iterations per epoch: %d" %nItersPerEpoch)
 
-			with tf.Session(config=config) as sess:
-				tf.global_variables_initializer().run()
-				summary_writer = tf.summary.FileWriter(self.log_path, graph=tf.get_default_graph())
-				saver = tf.train.Saver(max_to_keep=40)
+		config = tf.ConfigProto(allow_soft_placement = True)
 
-				prevLoss = -1
+		with tf.Session(config=config) as sess:
+			tf.global_variables_initializer().run()
+			summary_writer = tf.summary.FileWriter(self.logPath, graph=tf.get_default_graph())
+			saver = tf.train.Saver(max_to_keep=40)
+
+			prevLoss = -1
+			currLoss = 0
+			start_t = time.time()
+
+			for e in range(self.nEpochs):
+				shuffledIndexes = np.random.permutation(nSamples)
+
+				captions = captions[shuffledIndexes]
+				imageIdxs = imageIdxs[shuffledIndexes]
+
+				for i in range(nItersPerEpoch):
+					captionsBatch = captions[i*self.batchSize:(i+1)*self.batchSize]
+
+					imageIdxsBatch = imageIdxs[i*self.batchSize:(i+1)*self.batchSize]
+
+					featuresBatch = features[imageIdxsBatch]
+
+					feed_dict = {self.model.features: featuresBatch, self.model.captions: captionsBatch}
+					_ ,l = sess.run([trainOp, loss], feed_dict)
+					currLoss += l
+
+					if i % 100 == 0:
+						summary = sess.run(summaryOp, feed_dict)
+						summary_writer.add_summary(summary, e*nItersPerEpoch + i)
+
+					if (i+1) % self.printCaptions == 0:
+						print("\nTrain loss at epoch %d & iteration %d (mini-batch): %.5f" %(e+1, i+1, l))
+						print("Elapsed time: ", time.time() - start_t)
+						groundTruths = captions[imageIdxs == imageIdxsBatch[0]]
+						decoded = decode_captions(groundTruths, self.model.idx_to_word)
+						for j, gt in enumerate(decoded):
+							print("Ground truth %d: %s" %(j+1, gt)                    )
+						genCaps = sess.run(generated_captions, feed_dict)
+						decoded = decode_captions(genCaps, self.model.idx_to_word)
+						print("Generated caption: %s\n" %decoded[0])
+
+				print("Previous epoch loss: ", prevLoss)
+				print("Current epoch loss: ", currLoss)
+				print("Elapsed time: ", time.time() - start_t)
+				prevLoss = currLoss
 				currLoss = 0
-				start_t = time.time()
 
-				for e in range(self.nEpochs):
-					shuffledIndexes = np.random.permutation(nSamples)
+				if self.printScore:
+					allGeneratedCaptions = np.ndarray((valFeatures.shape[0], 20))
+					for i in range(nItersVal):
+						featuresBatch = valFeatures[i*self.batchSize:(i+1)*self.batchSize]
+						feed_dict = {self.model.features: featuresBatch}
+						generatedCaptions = sess.run(generated_captions, feed_dict=feed_dict)  
+						allGeneratedCaptions[i*self.batchSize:(i+1)*self.batchSize] = generatedCaptions
 
-					captions = captions[shuffledIndexes]
-					imageIdxs = imageIdxs[shuffledIndexes]
+					allDecoded = decode_captions(allGeneratedCaptions, self.model.idx_to_word)
+					save_pickle(allDecoded, "./data/val/val.candidate.captions.pkl")
+					# scores = evaluate(data_path='./data', split='val', get_scores=True)
+					# write_bleu(scores=scores, path=self.model_path, epoch=e)
 
-					for i in range(nItersPerEpoch):
-						captionsBatch = captions[i*self.batchSize:(i+1)*self.batchSize]
-
-						imageIdxsBatch = imageIdxs[i*self.batchSize:(i+1)*self.batchSize]
-
-						featuresBatch = features[imageIdxsBatch]
-
-						feed_dict = {self.model.features: featuresBatch, self.model.captions: captionsBatch}
-						_ ,l = sess.run([train_op, loss], feed_dict)
-						currLoss += l
-
-						if i % 10 == 0:
-							summary = sess.run(summaryOp, feed_dict)
-							summary_writer.add_summary(summary, e*nItersPerEpoch + i)
-
-						if (i+1) % self.print_every == 0:
-							print("\nTrain loss at epoch %d & iteration %d (mini-batch): %.5f" %(e+1, i+1, l))
-							print("Elapsed time: ", time.time() - start_t)
-							groundTruths = captions[imageIdxs == imageIdxsBatch[0]]
-							decoded = decode_captions(groundTruths, self.model.idx_to_word)
-							for j, gt in enumerate(decoded):
-								print("Ground truth %d: %s" %(j+1, gt)                    )
-							genCaps = sess.run(generated_captions, feed_dict)
-							decoded = decode_captions(genCaps, self.model.idx_to_word)
-							print("Generated caption: %s\n" %decoded[0])
-
-					print("Previous epoch loss: ", prevLoss)
-					print("Current epoch loss: ", currLoss)
-					print("Elapsed time: ", time.time() - start_t)
-					prevLoss = currLoss
-					currLoss = 0
-
-					if self.print_bleu:
-						allGeneratedCaptions = np.ndarray((valFeatures.shape[0], 20))
-						for i in range(n_iters_val):
-							featuresBatch = valFeatures[i*self.batchSize:(i+1)*self.batchSize]
-							feed_dict = {self.model.features: featuresBatch}
-							generatedCaptions = sess.run(generated_captions, feed_dict=feed_dict)  
-							allGeneratedCaptions[i*self.batchSize:(i+1)*self.batchSize] = generatedCaptions
-
-						allDecoded = decode_captions(allGeneratedCaptions, self.model.idx_to_word)
-						save_pickle(allDecoded, "./data/val/val.candidate.captions.pkl")
-						# scores = evaluate(data_path='./data', split='val', get_scores=True)
-						# write_bleu(scores=scores, path=self.model_path, epoch=e)
-
-					# save model's parameters
-					if (e+1) % self.save_every == 0:
-						saver.save(sess, os.path.join(self.modelPath, 'model'), global_step=e+1)
-						print("model-%s saved." %(e+1))
+				# save model's parameters
+				if (e+1) % self.saveEpochs == 0:
+					saver.save(sess, os.path.join(self.modelPath, 'model'), global_step=e+1)
+					print("model-%s saved." %(e+1))
 
 
 def main():
@@ -163,10 +164,10 @@ def main():
 
 	wordIndex = trainData['word_to_idx']
 
-	model = ImageCapModel(wordIndex, dimFeature=4096, dimEmbed=300, dimHidden=300, nTimeStep=16)
+	model = ImageCapModel(wordIndex, dimFeature=4096, dimEmbed=300, dimHidden=300, nTimeStep=26, dropout = 0.7)
 
-	trainer = Trainer(model, trainData, valData, batchSize = 100, nEpochs = 20, learningRate = 0.001, 
-					logPath = 'log/', modelPath = 'model/lstm', printScore = True, printCaptions = 50, saveEpochs = 4)
+	trainer = Trainer(model, trainData, valData, batchSize = 50, nEpochs = 20, learningRate = 0.001, 
+					logPath = 'log2/', modelPath = 'model/lstm2', printScore = True, printCaptions = 50, saveEpochs = 4)
 
 	trainer.train()
 

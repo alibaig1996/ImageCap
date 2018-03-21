@@ -11,7 +11,7 @@ import json
 from gensim.models import KeyedVectors
 
 class ImageCapModel(object):
-	def __init__(self, wordIndexes, dimFeature=4096, dimEmbed=300, dimHidden=300, nTimeStep=16):
+	def __init__(self, wordIndexes, dimFeature=4096, dimEmbed=300, dimHidden=300, nTimeStep=16, dropout = 0.7):
 
 		# Model parameters
 		self.wordIndexes = wordIndexes
@@ -23,6 +23,7 @@ class ImageCapModel(object):
 		self.nTimeStep = nTimeStep
 		self._start = wordIndexes['<START>']
 		self._null = wordIndexes['<NULL>']
+		self.dropout = dropout
 
 		self.weightInitializer = tf.contrib.layers.xavier_initializer()
 		self.constInitializer = tf.constant_initializer(0.0)
@@ -47,8 +48,8 @@ class ImageCapModel(object):
 			return imageEmbeddings
 
 	# Maps Captions into embedding space
-	def buildCaptionEmbeddings(self, inputs):
-		with tf.variable_scope('captionEmbedding'):
+	def buildCaptionEmbeddings(self, inputs, reuse=False):
+		with tf.variable_scope('captionEmbedding', reuse=reuse):
 			captionEmbedding = tf.get_variable('captionEmbedding', [self.vocabSize, self.dimEmbed], initializer=self.embedInitializer)
 			vec = tf.nn.embedding_lookup(captionEmbedding, inputs, name='word_vector')  # (N, T, M) or (N, M)
 			return vec
@@ -65,17 +66,17 @@ class ImageCapModel(object):
 
 			return cellState, hiddenState
 
-	def buildLogits(self, hiddenState):
-		with tf.variable_scope('logits'):
+	def buildLogits(self, hiddenState, reuse = False):
+		with tf.variable_scope('logits', reuse=reuse):
 			outWeights = tf.get_variable('outWeights', [self.dimHidden, self.vocabSize], initializer = self.weightInitializer)
 			outBiases = tf.get_variable('outBiases', [self.vocabSize], initializer=self.constInitializer)
 
-			outLogits = (tf.matmul(tf.nn.dropout(hiddenState, 0.5), outWeights) + outBiases)
+			outLogits = (tf.matmul(tf.nn.dropout(hiddenState, self.dropout), outWeights) + outBiases)
 
 			return outLogits
 
 
-	def build():
+	def build(self):
 
 		features = self.features
 		captions = self.captions

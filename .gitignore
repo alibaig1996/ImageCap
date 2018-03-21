@@ -6,3 +6,6 @@ image/
 *.jpeg
 *.pkl
 core/cococaption/
+log/
+log2/
+model/

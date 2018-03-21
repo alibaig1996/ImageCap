@@ -261,7 +261,7 @@ def main():
     # batch size for extracting feature vectors from vggnet.
     batch_size = 50
     # maximum length of caption(number of word). if caption is longer than max_length, deleted.  
-    max_length = 15
+    max_length = 25
     # if word occurs less than word_count_threshold in training dataset, the word index is special unknown token.
     word_count_threshold = 1
 
@@ -270,12 +270,12 @@ def main():
 
     # about 80000 images and 400000 captions for train dataset
     train_dataset = processCaptionData(caption_file='data/annotations/captions_train2017.json',
-                                          image_dir='image/train2017/',
+                                          image_dir='image/train_resized/',
                                           max_length=max_length)
 
     # about 40000 images and 200000 captions
     val_dataset = processCaptionData(caption_file='data/annotations/captions_val2014.json',
-                                        image_dir='image/val2014_resized/',
+                                        image_dir='image/val_resized/',
                                         max_length=max_length)
 
     # about 4000 images and 20000 captions for val / test dataset
@@ -283,23 +283,23 @@ def main():
     test_cutoff = int(0.2 * len(val_dataset))
     print('Finished processing caption data')
 
-    save_pickle(train_dataset, 'data/train/train.annotations2.pkl')
+    save_pickle(train_dataset, 'data/train/train.annotations.pkl')
     save_pickle(val_dataset[:val_cutoff], 'data/val/val.annotations.pkl')
     save_pickle(val_dataset[val_cutoff:test_cutoff].reset_index(drop=True), 'data/test/test.annotations.pkl')
 
     for split in ['train', 'val', 'test']:
-        annotations = load_pickle('./data/%s/%s.annotations2.pkl' % (split, split))
+        annotations = load_pickle('./data/%s/%s.annotations.pkl' % (split, split))
 
         if split == 'train':
             word_to_idx = buildVocab(annotations=annotations, threshold=word_count_threshold)
-            save_pickle(word_to_idx, './data/%s/word_to_idx2.pkl' % split)
+            save_pickle(word_to_idx, './data/%s/word_to_idx.pkl' % split)
         
-        # captions = buildCaptionVector(annotations=annotations, word_to_idx=word_to_idx, max_length=max_length)
-        # save_pickle(captions, './data/%s/%s.captions.pkl' % (split, split))
+        captions = buildCaptionVector(annotations=annotations, word_to_idx=word_to_idx, max_length=max_length)
+        save_pickle(captions, './data/%s/%s.captions.pkl' % (split, split))
 
         file_names, id_to_idx = buildFileNames(annotations, split)
-        save_pickle(file_names, './data/%s/%s.file.names2.pkl' % (split, split))
-        quit()
+        save_pickle(file_names, './data/%s/%s.file.names.pkl' % (split, split))
+
         image_idxs = buildImageIdx(annotations, id_to_idx, split)
         save_pickle(image_idxs, './data/%s/%s.image.idxs.pkl' % (split, split))
 
@@ -316,6 +316,7 @@ def main():
         save_pickle(feature_to_captions, './data/%s/%s.references.pkl' % (split, split))
         print("Finished building %s caption dataset" %split)
 
+    # quit()
     # extract fc7 feature maps
     vgg = Vgg16()
     vgg.build()
