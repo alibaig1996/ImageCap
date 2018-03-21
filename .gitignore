@@ -9,3 +9,12 @@ core/cococaption/
 log/
 log2/
 model/
+tf-faster-rcnn/*.so
+tf-faster-rcnn/*.pyc
+tf-faster-rcnn/output
+tf-faster-rcnn/tensorboard
+tf-faster-rcnn/lib/build
+tf-faster-rcnn/lib/pycocotools
+tf-faster-rcnn/lib/pycocotools/_mask.c
+tf-faster-rcnn/lib/pycocotools/_mask.so
+tf-faster-rcnn/.idea
